@@ -1,0 +1,241 @@
+---
+title: "DC Hospital Patient Registry Proposal"
+author: "Natalie Cortopassi"
+date: "9/22/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse) # loads the tidyverse tools
+library(DBI) # loads our database interface
+library(RPostgres) # loads the database driver for PostgreSQL
+library(connections) # helps RPostgres work with RStudio
+
+con <- connection_open(RPostgres::Postgres(),
+          dbname = "syntheticmguh",
+          host = "IP address of host",
+          user = "username",
+          password = "password",
+          # Tell the driver to return very large integers as floating point (vs truncating them)
+          bigint = "numeric")
+```
+
+## DC Hospital Patient Registry Collaboration on COVID-19 (DC-HPRCC)
+
+#### *Introduction*
+The CDC estimates that from February 2020-May 2021 the burden of COVID-19 on the United States alone was responsible for 120.2 million infections, 101.8 million symptomatic illnesses, 6.2 million hospitalizations, and 767,000 total deaths. Despite worldwide calls for containment, social distancing, and mass vaccination efforts the incidence of the disease continues to be a public health threat. 
+
+COVID-19 is a respiratory tract infection caused by the novel coronavirus (SARS-CoV-2). The case fatality rate is higher in older adults (14.8% in those 80± years) and 49% of all critical cases contain this vulnerable population. Those with preexisting conditions including cardiovascular disease, cancer, hypertension, diabetes mellitus, and chronic respiratory disease have higher fatality rates in response to COVID-19 infection. The United States contains 116 million adults with hypertension, 26 million adults with diabetes mellitus, and an estimated 1,806,590 new cases of cancer will be diagnosed in the United States in 2021 alone. 
+
+As of September 2021 there are three authorized and recommended COVID-19 vaccines that are considered to be safe, effective, and reduce the risk of severe illness by the CDC. These vaccines are produced by Pfizer-BioNTech, Moderna, and Johnson & Johnson. The Pfizer-BioNTech vaccinations are approved for people 12 years and older while the Moderna and Johnson & Johnson vaccines are approved for people 18 years and older. Three in ten Americans remain unvaccinated, according to the latest survey from the Kaiser Family Foundation (KFF). Breakthrough infections in the United States report that over 90% of cases, hospitalizations, and death have occurred among people who are unvaccinated or not yet fully vaccinated. The vaccination rates of people fully vaccinated in Maryland, DC, and Virginia updated September 20th, 2021 are 63.4%, 59.2%, and 59.7% respectively. Clinical registry data can provide valuable insights into patient characteristics, treatment patterns, and clinical outcomes in patients hospitalized. While the gold standard of clinical trial design remains to be randomized controlled trials, the opportunity to collect real-world evidence collected through a patient registry of clinical encounters provides an opportunity to study the clinical effectiveness of treatments of COVID-19.
+
+Time-sensitive emergencies, including stroke, cardiac arrest, and ST-segment-elevation myocardial infarction, have undoubtedly been impacted. Through the collection of the data included in this registry during this pandemic, we have the opportunity to quantify the real-world impact and inform care during future public health emergencies. US first responders, emergency room clinicians, and cath lab-operators are now burdened with the need to wear personalized protective equipment, decontaminate equipment and rooms between uses, and operate with significantly higher patient volume that add to the already strained resources as the volume of hospitalizations stretch to include COVID-19 infected patients. It is important to share information across hospitals to better understand reasons for treatment delays, best clinical practices, and insights into patient profile patterns and apply that knowledge to future scenarios. Additionally, the use of retrospective data analysis may allow the deconstruction of additional risk factors, uniquely susceptible sub-populations, and complications.
+
+#### *Registry Plan and Objectives*
+Beginning early December 2021, COVID-19 specific data elements will be added to each of the DC-HPRCC registry modules. DC-HPRCC is a voluntary quality improvement program, capturing data on patients hospitalized with COVID-19 in a registry with participating DC Hospitals (MGUH, Sibley, and GW). Specifically, data abstractors and health care providers will have the opportunity to provide information including :
+  1. Deidentified patient ID code
+  2. Patient demographic information (DOB, gender, race, ethnicity, income, health insurance status, marital status, education, and employment)
+  3. Patient medical history (including COVID-19 vaccine type and date of complete inoculation)
+  4. Date of suspected contact with COVID-19 
+  5. Date of diagnosis 
+  6. Symptoms experienced with severity scales
+  7. Variant type
+  8. Clinical care plan taken
+  9. Medication name and dosage taken
+  10. Vital signs and symptoms severity scales taken throughout treatment plan 
+  11. Readmission data (yes/no)
+  12. Follow-up data to be added progressively through annual physical examination
+The objectives of this registry are as follows -- Determine the natural course of the disease known as COVID-19 and how patient demographic information might affect the course. What are significant predictors of poor outcomes? Are there distinct patterns in symptom severity and patient outcomes associated with variant type. How do clinical practices vary, and what are the best predictors of treatment success? Are there disparities that exist in the delivery and outcome of care? Was a proactive implementation of an intervention program or risk-management activity in at-risk populations successful? What are the resources used and economic parameters of real world treatment of a typical patient? Does having COVID-19 have any long term effects on a patient's health?
+
+#### *Feasibility of DC-HPRCC*
+The registry of shared information between DC area hospitals is essential for a better and more comprehensive picture of COVID-19 and its treatment. The DC-HPRCC is not only an appropriate manner of collecting patient data across otherwise exclusive hospital organizations and populations but the specific data entered and central location will allow our scientific questions to be queried through times of emergency and limited knowledge. The quality of the data entered into the DC-HPRCC is of paramount importance. To the best of our knowledge this data can largely be collected from the individual EMRs utilized at MGUH, Sibley, and GW. The centralization of the data into one patient registry will be accomplished through using the Observational Medical Outcomes Partnership (OMOP) Common Data Model (CDM), which will provide the three participating hospitals a common structure and a common vocabulary. Data and CDM experts will work together to design the Extraction, Transformation, and Loading (ETL) process of the individual hospital data into the registry. People with medical knowledge will work to create the code mappings and a technical person will implement the ETL.
+
+The key element for determining the ultimate feasibility of this study relies on the ability to secure funding. The electronic nature of the data collected and the fact that this data can largely be extracted from existing Electronic Medical Records is an advantage for the expense of the registry. The registry will need to include both retrospective patient data as well as prospective data as long as more patients continue to contract COVID-19, patient follow-up data is being entered, and if any new variant types appear. The registry as described above will provide much needed data on the development of this novel virus that has sparked the COVID-19 global pandemic, the real world varied health impacts and associative relationships that exist in those infected, and the best standard care practices to be implemented for the best patient outcomes. The DC-HPRCC will band our hospitals together through our shared data and better improve healthcare quality and safety which will ultimately save lives in the future. 
+
+### Dataset logic
+#### What patients will be included, with specific logic to select them.
+Patients that were tested for "SARS" and had a positive result will be included int he covid cohort.
+```{sql connection=con}
+DROP TABLE IF EXISTS covid_cohort_temp;
+```
+
+```{sql connection=con}
+WITH covid_encounters AS (
+SELECT *
+  FROM encounters
+  WHERE reasondescription like '%COVID%'
+  --GROUP BY encounterclass, description, encounters.patient, encounters.reasondescription
+  ), covid_conditions AS (
+SELECT *
+  FROM conditions
+  WHERE description LIKE '%COVID%'
+  --GROUP BY description, condition.patient
+  ), covid_observations AS (
+SELECT *
+  FROM observations
+  WHERE description like '%SARS%' AND value like '%Detected%'
+  --GROUP BY description, value
+  ORDER BY patient)
+SELECT covid_encounters.patient, covid_observations.value
+INTO TEMP covid_cohort_temp
+FROM covid_encounters
+INNER JOIN covid_observations
+ON covid_encounters.patient = covid_observations.patient
+```
+```{sql connection=con}
+SELECT COUNT(patient)
+FROM covid_cohort_temp
+```
+
+
+#### Information to Include in report 
+- Demographic information (marital status, race, ethnicity, gender, and county of residence)
+- Immunization information 
+- Careplan information 
+- Device information (devices used)
+```{sql connection=con}
+DROP TABLE IF EXISTS demographics_temp;
+```
+```{sql connection=con}
+SELECT patient, id, deathdate, marital, race, ethnicity, gender, county
+  INTO TEMP demographics_temp
+  FROM covid_cohort_temp
+  LEFT JOIN patients
+  ON covid_cohort_temp.patient = patients.id
+```
+Count of patients with COVID who are maried and single
+```{sql connection=con}
+SELECT COUNT(marital), marital
+FROM demographics_temp
+GROUP BY marital;
+```
+Count of patients with COVID by race
+```{sql connection=con}
+SELECT COUNT(race), race
+FROM demographics_temp
+GROUP BY race;
+```
+
+Count of patients with COVID by ethnicity
+```{sql connection=con}
+SELECT COUNT(ethnicity), ethnicity
+FROM demographics_temp
+GROUP BY ethnicity;
+```
+Count of patients with COVID by gender
+```{sql connection=con}
+SELECT COUNT(gender), gender
+FROM demographics_temp
+GROUP BY gender;
+```
+Count of patients with COVID by county
+```{sql connection=con}
+SELECT COUNT(county), county
+FROM demographics_temp
+GROUP BY county;
+```
+```{sql connection=con}
+DROP TABLE IF EXISTS covid_comparison_temp;
+```
+
+```{sql connection=con}
+WITH covid_encounters AS (
+SELECT *
+  FROM encounters
+  WHERE reasondescription like '%COVID%'
+  --GROUP BY encounterclass, description, encounters.patient, encounters.reasondescription
+  ), covid_conditions AS (
+SELECT *
+  FROM conditions
+  WHERE description LIKE '%COVID%'
+  --GROUP BY description, condition.patient
+  ), covid_observations AS (
+SELECT *
+  FROM observations
+  WHERE description like '%SARS%'
+  --GROUP BY description, value
+  ORDER BY patient)
+SELECT covid_encounters.patient, covid_observations.value
+INTO TEMP covid_comparison_temp
+FROM covid_encounters
+INNER JOIN covid_observations
+ON covid_encounters.patient = covid_observations.patient
+```
+```{sql connection=con}
+SELECT *
+FROM covid_comparison_temp
+```
+
+```{sql connection=con}
+DROP TABLE IF EXISTS immunizations_temp;
+```
+Information on Immunizations
+```{sql connection=con}
+SELECT covid_comparison_temp.patient, covid_comparison_temp.value, date, description
+  INTO TEMP immunizations_temp
+  FROM covid_comparison_temp
+  INNER JOIN immunizations
+  ON covid_comparison_temp.patient = immunizations.patient
+```
+```{sql connection=con}
+SELECT * 
+FROM immunizations_temp
+```
+Count of immunizations in the population of people tested for COVID comparing the counts of different immunizations between those who had a SARS test that detected the virus and those who had a SARS test that did NOT detect the virus.
+```{sql connection=con}
+SELECT COUNT(description), description, value
+FROM immunizations_temp
+GROUP BY description, value
+ORDER BY description;
+```
+Calculate number of days between start and stop date columns for careplan length adn store in temp table
+```{sql connection=con}
+DROP TABLE IF EXISTS careplans_temp;
+```
+```{sql connection=con}
+SELECT covid_cohort_temp.patient, start, stop, description, reasondescription,
+  DATE_PART('day', "stop"::timestamp - "start"::timestamp) + 1 AS careplan_length_days
+  INTO TEMP careplans_temp
+  FROM covid_cohort_temp
+  INNER JOIN careplans
+  ON covid_cohort_temp.patient = careplans.patient
+```
+
+```{sql connection=con}
+SELECT patient, careplan_length_days, description, reasondescription
+FROM careplans_temp
+WHERE reasondescription LIKE '%COVID%';
+```
+Average length of careplan for someone with COVID
+```{sql connection=con}
+SELECT description, AVG(careplan_length_days)
+FROM careplans_temp
+WHERE reasondescription LIKE '%COVID%'
+GROUP BY description;
+```
+
+```{sql connection=con}
+DROP TABLE IF EXISTS devices_temp;
+```
+
+```{sql connection=con}
+SELECT covid_cohort_temp.patient, devices.description
+  INTO TEMP devices_temp
+  FROM covid_cohort_temp
+  LEFT JOIN devices
+  ON covid_cohort_temp.patient = devices.patient
+```
+Count of devices used by patients with COVID 
+```{sql connection=con}
+SELECT COUNT(description), description
+FROM devices_temp
+GROUP BY description;
+```
+
+#### How could multiple hospital information be analyzed as a single data set
+All hospitals data will be converted into the OMOP CDM. This will require the raw data from each individual EMR from the distinct hospitals, who have agreed to join the DC-HPRCC, to be converted into a common structural framework and language. After the conversion by the data and CDM experts the different hospital information will be added into the DC-HPRCC. In the DC-HPRCC the common structure, language, and coding will allow all the data to reside within a single patient registry including a single set of tables that include the data discussed and located above. 
+
+
+#### What outcomes will be tracked, and why? 
+Outcomes will include survival which can be seen in the inclusion or absence of the death-date in the patients data table. The demographic information combined with the numbers of admissions/diagnosis may provide insight into sub populations that are seeking treatment at higher rates than others along with other public health questions. The number of patients that were included in the registry that had COIVD-19 and were fully or not fully vaccinated could provide information on the efficacy of the different vaccine and would be found in the immunizations table. The number of times the patient was admitted/readmitted and followed specific care plans, like the "infectious disease care plan" in the synthea data set, could show us recurrence information and efficacy of treatment. The length of stay for inpatient patients could be determined through the start and stop date in the encounters table and would give a general idea of the severity of the illness which could be tested against different patient demographics, medical histories, and care plans. We could use the procedures table to see what was performed on the patients and get an idea of the care plan being utilized throughout the progression of the illness. The devices used by and on the patients (e.g. ventilator) could show the different devices used in treatment plans and may even provide insight into devices that might help treatment throughout the severe progression of symptoms experienced by the patients. 
